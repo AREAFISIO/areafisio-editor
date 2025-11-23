@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>Editor CASI CLINICI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/konva@9/konva.min.js"></script>
+  <script src="https://unpkg.com/react-konva@18/umd/react-konva.js"></script>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      background: #fff; padding: 8px 12px; border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px;
+    }
+    button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
+    button.primary { background:#0070f3; color:#fff; border-color:#0070f3; }
+    button:disabled { opacity:.6; cursor:default; }
+    .canvas-container {
+      background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1);
+      padding:8px; overflow:auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script>
+    const { useState, useEffect, useRef } = React;
+    const { Stage, Layer, Line, Arrow, Text: KText, Image: KonvaImage } = ReactKonva;
+
+    function useImage(url) {
+      const [img,setImg] = useState(null);
+      useEffect(() => {
+        if(!url){ setImg(null); return; }
+        const i = new Image();
+        i.crossOrigin = "Anonymous";
+        i.onload = () => setImg(i);
+        i.src = url;
+      }, [url]);
+      return img;
+    }
+
+    function App() {
+      const [recordId, setRecordId] = useState(null);
+      const [imageUrl, setImageUrl] = useState(null);
+      const [filename, setFilename] = useState("image.png");
+      const imageObj = useImage(imageUrl);
+
+      const [tool, setTool] = useState("pen");
+      const [color, setColor] = useState("#ff0000");
+      const [brushSize, setBrushSize] = useState(4);
+      const [textInput, setTextInput] = useState("");
+      const [shapes, setShapes] = useState([]);
+      const [stageScale, setStageScale] = useState(1);
+      const [stagePos, setStagePos] = useState({x:0,y:0});
+      const [saving, setSaving] = useState(false);
+      const [loading, setLoading] = useState(false);
+      const stageRef = useRef();
+
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const recId = params.get("recordId");
+        if (!recId) {
+          alert("recordId mancante nell'URL");
+          return;
+        }
+        setRecordId(recId);
+        setLoading(true);
+        fetch(`/api/record?recordId=${encodeURIComponent(recId)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (!data.imageUrl) {
+              alert("Nessuna immagine nel campo BODY per questo record.");
+            } else {
+              setImageUrl(data.imageUrl);
+              if (data.filename) setFilename(data.filename);
+            }
+          })
+          .catch(err => alert("Errore caricamento immagine: " + err.message))
+          .finally(() => setLoading(false));
+      }, []);
+
+      const handleMouseDown = e => {
+        if (!imageObj) return;
+        const stage = e.target.getStage();
+        if (e.target !== stage) return;
+        const pos = stage.getPointerPosition();
+        if (tool === "pen" || tool === "arrow") {
+          setShapes(s => [...s, { type: tool, points: [pos.x,pos.y], color, strokeWidth: brushSize, x:0,y:0 }]);
+        } else if (tool === "eraser") {
+          setShapes(s => [...s, { type:"eraser", points:[pos.x,pos.y], strokeWidth: brushSize*2, x:0,y:0 }]);
+        } else if (tool === "text" && textInput.trim()) {
+          setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput.trim(), color, fontSize:22 }]);
+          setTextInput("");
+        }
+      };
+
+      const handleMouseMove = e => {
+        if (!["pen","arrow","eraser"].includes(tool)) return;
+        setShapes(prev => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length-1];
+          if (!["pen","arrow","eraser"].includes(last.type)) return prev;
+          const stage = e.target.getStage();
+          const pos = stage.getPointerPosition();
+          const updated = {...last, points:[...last.points, pos.x,pos.y]};
+          return [...prev.slice(0,-1), updated];
+        });
+      };
+
+      const handleShapeDragEnd = (idx,e) => {
+        const {x,y} = e.target.position();
+        setShapes(prev => {
+          const copy=[...prev];
+          copy[idx] = {...copy[idx], x,y};
+          return copy;
+        });
+      };
+
+      const handleWheel = e => {
+        e.evt.preventDefault();
+        const stage = e.target.getStage();
+        const oldScale = stageScale;
+        const pointer = stage.getPointerPosition();
+        const scaleBy = 1.05;
+        const direction = e.evt.deltaY > 0 ? -1 : 1;
+        const newScale = direction>0 ? oldScale*scaleBy : oldScale/scaleBy;
+        const mousePointTo = {
+          x:(pointer.x - stagePos.x)/oldScale,
+          y:(pointer.y - stagePos.y)/oldScale
+        };
+        const newPos = {
+          x: pointer.x - mousePointTo.x * newScale,
+          y: pointer.y - mousePointTo.y * newScale
+        };
+        setStageScale(newScale);
+        setStagePos(newPos);
+      };
+
+      const handleStageDragEnd = e => {
+        setStagePos(e.target.position());
+      };
+
+      const undo = () => setShapes(s => s.slice(0,-1));
+      const resetCanvas = () => setShapes([]);
+
+      const save = async () => {
+        if (!recordId || !stageRef.current) return;
+        setSaving(true);
+        try {
+          const stage = stageRef.current;
+          const oldScale = stage.scaleX();
+          const oldPos = stage.position();
+          stage.scale({x:1,y:1});
+          stage.position({x:0,y:0});
+          stage.batchDraw();
+          const dataURL = stage.toDataURL({pixelRatio:2});
+          stage.scale({x:oldScale,y:oldScale});
+          stage.position(oldPos);
+          stage.batchDraw();
+
+          const res = await fetch("/api/record", {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({ recordId, dataURL, filename })
+          });
+          const out = await res.json();
+          if (!res.ok) throw new Error(out.error || "Errore salvataggio");
+          alert("Salvato e aggiornato in Airtable.");
+          setShapes([]);
+          if (out.publicUrl) setImageUrl(out.publicUrl);
+        } catch (err) {
+          alert(err.message);
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      return React.createElement(
+        "div",
+        { className: "app" },
+        React.createElement("h2", null, "Editor CASI CLINICI"),
+        loading && React.createElement("p", null, "Caricamento immagine..."),
+        React.createElement(
+          "div",
+          { className: "toolbar" },
+          React.createElement("span", null, "Tool:"),
+          React.createElement("select", { value: tool, onChange:e=>setTool(e.target.value) },
+            React.createElement("option",{value:"pen"},"Penna"),
+            React.createElement("option",{value:"arrow"},"Freccia"),
+            React.createElement("option",{value:"text"},"Testo"),
+            React.createElement("option",{value:"eraser"},"Gomma")
+          ),
+          React.createElement("span", null, "Spessore:"),
+          React.createElement("input", {
+            type:"range", min:1, max:20, value:brushSize,
+            onChange:e=>setBrushSize(Number(e.target.value))
+          }),
+          React.createElement("span", null, brushSize + "px"),
+          React.createElement("span", null, "Colore:"),
+          React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+          tool === "text" &&
+            React.createElement("input", {
+              type:"text", placeholder:"Scrivi testo",
+              value:textInput, onChange:e=>setTextInput(e.target.value)
+            }),
+          React.createElement("button",{onClick:undo},"Undo"),
+          React.createElement("button",{onClick:resetCanvas},"Reset"),
+          React.createElement("button",{className:"primary", onClick:save, disabled:saving || !imageObj},
+            saving ? "Salvataggio..." : "Salva in Airtable"
+          )
+        ),
+        React.createElement(
+          "div",
+          { className:"canvas-container" },
+          !imageObj && !loading &&
+            React.createElement("p", null, "Nessuna immagine trovata nel campo BODY per questo record."),
+          imageObj &&
+            React.createElement(
+              Stage,
+              {
+                width:imageObj.width,
+                height:imageObj.height,
+                scaleX:stageScale,
+                scaleY:stageScale,
+                x:stagePos.x,
+                y:stagePos.y,
+                draggable:true,
+                onDragEnd:handleStageDragEnd,
+                onWheel:handleWheel,
+                onMouseDown:handleMouseDown,
+                onMouseMove:handleMouseMove,
+                ref:stageRef,
+                style:{border:"1px solid #ddd", background:"#fff"}
+              },
+              React.createElement(
+                Layer,
+                null,
+                React.createElement(KonvaImage, { image:imageObj }),
+                shapes.map((s,i) => {
+                  if (s.type === "pen")
+                    return React.createElement(Line,{
+                      key:i,x:s.x||0,y:s.y||0,points:s.points,
+                      stroke:s.color,strokeWidth:s.strokeWidth,
+                      lineCap:"round",lineJoin:"round",
+                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
+                    });
+                  if (s.type === "arrow")
+                    return React.createElement(Arrow,{
+                      key:i,x:s.x||0,y:s.y||0,points:s.points,
+                      stroke:s.color,strokeWidth:s.strokeWidth,
+                      pointerLength:10,pointerWidth:10,
+                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
+                    });
+                  if (s.type === "eraser")
+                    return React.createElement(Line,{
+                      key:i,x:s.x||0,y:s.y||0,points:s.points,
+                      stroke:"black",strokeWidth:s.strokeWidth,
+                      lineCap:"round",lineJoin:"round",
+                      globalCompositeOperation:"destination-out"
+                    });
+                  if (s.type === "text")
+                    return React.createElement(KText,{
+                      key:i,x:s.x,y:s.y,text:s.text,
+                      fill:s.color,fontSize:s.fontSize||22,
+                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
+                    });
+                  return null;
+                })
+              )
+            )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>

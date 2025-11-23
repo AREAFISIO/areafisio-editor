@@ -9,9 +9,9 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 
-  <!-- Konva -->
-  <script src="https://unpkg.com/konva@9/konva.min.js"></script>
-  <script src="https://unpkg.com/react-konva@18/umd/react-konva.js"></script>
+  <!-- Konva + React-Konva CORRETTI E STABILI -->
+  <script src="https://cdn.jsdelivr.net/npm/konva@9.3.0/konva.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-konva@18.2.7/umd/react-konva.js"></script>
 
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
@@ -40,25 +40,27 @@
 
   <script>
     (function () {
-      var root = document.getElementById('root');
+      const root = document.getElementById('root');
 
-      // Controlli base: se una libreria manca, MOSTRA MESSAGGIO invece della pagina bianca
-      if (!window.React || !window.ReactDOM) {
-        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: React non è stato caricato.</div>";
+      // --- CONTROLLI DI SICUREZZA ---
+      if (!window.React) {
+        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: React non caricato.</div>";
         return;
       }
       if (!window.ReactKonva) {
-        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: ReactKonva non è stato caricato.</div>";
+        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: ReactKonva non caricato.</div>";
         return;
       }
 
       const { useState, useEffect, useRef } = React;
-      const { Stage, Layer, Line, Arrow, Text: KText, Image: KImage } = ReactKonva;
+      const {
+        Stage, Layer, Line, Arrow, Text: KText, Image: KImage
+      } = ReactKonva;
 
       function useImage(url) {
         const [img, setImg] = useState(null);
         useEffect(() => {
-          if(!url) return;
+          if (!url) return;
           const i = new Image();
           i.crossOrigin = "Anonymous";
           i.onload = () => setImg(i);
@@ -85,23 +87,23 @@
         const imageObj = useImage(imageUrl);
         const stageRef = useRef();
 
-        // --- CARICA RECORD ---
+        // ---- CARICA IMMAGINE DAL BACKEND ----
         useEffect(() => {
           const params = new URLSearchParams(window.location.search);
           const rec = params.get("recordId");
+
           if (!rec) {
             setError("recordId mancante nell'URL");
             return;
           }
-          setRecordId(rec);
 
+          setRecordId(rec);
           setLoading(true);
+
           fetch("/api/record?recordId=" + encodeURIComponent(rec))
             .then(r => r.json())
             .then(data => {
-              if (!data.imageUrl)
-                throw new Error("Campo BODY vuoto o immagine mancante");
-
+              if (!data.imageUrl) throw new Error("Campo BODY vuoto o immagine mancante");
               setImageUrl(data.imageUrl);
               if (data.filename) setFilename(data.filename);
             })
@@ -109,7 +111,7 @@
             .finally(() => setLoading(false));
         }, []);
 
-        // --- DISEGNO ---
+        // ---- DISEGNO ----
         const handleMouseDown = e => {
           if (!imageObj) return;
           const stage = e.target.getStage();
@@ -118,10 +120,12 @@
 
           if (tool === "pen") {
             setShapes(s => [...s, { type:"pen", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-          } else if (tool === "arrow") {
+          }
+          else if (tool === "arrow") {
             setShapes(s => [...s, { type:"arrow", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-          } else if (tool === "text" && textInput.trim()) {
-            setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput, color }]);
+          }
+          else if (tool === "text" && textInput.trim()) {
+            setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput.trim(), color }]);
             setTextInput("");
           }
         };
@@ -131,20 +135,22 @@
           setShapes(prev => {
             if (!prev.length) return prev;
             const last = prev[prev.length - 1];
-            if (!last.points) return prev;
             const stage = e.target.getStage();
             const pos = stage.getPointerPosition();
-            const updated = { ...last, points:[...last.points, pos.x, pos.y] };
-            return [...prev.slice(0, -1), updated];
+            return [...prev.slice(0, -1), {
+              ...last,
+              points:[...last.points, pos.x, pos.y]
+            }];
           });
         };
 
         const undo = () => setShapes(s => s.slice(0, -1));
         const resetCanvas = () => setShapes([]);
 
-        // --- SALVA ---
+        // ---- SALVA ----
         const save = async () => {
           if (!recordId || !stageRef.current) return;
+
           setSaving(true);
           setError(null);
 
@@ -158,9 +164,9 @@
             });
 
             const out = await res.json();
-            if (!res.ok) throw new Error(out.error || "Errore salvataggio");
+            if (!res.ok) throw new Error(out.error);
 
-            alert("Immagine salvata con successo!");
+            alert("Immagine salvata!");
             setShapes([]);
             if (out.publicUrl) setImageUrl(out.publicUrl);
           }
@@ -172,20 +178,26 @@
           }
         };
 
+        // ---- UI ----
         return React.createElement("div", { className:"app" },
           React.createElement("h2", null, "Editor CASI CLINICI"),
 
           error && React.createElement("div", { className:"error-box" }, error),
-          loading && React.createElement("p", null, "Caricamento immagine..."),
+          loading && React.createElement("p", null, "Caricamento..."),
 
           React.createElement("div", { className:"toolbar" },
-            React.createElement("select", { value:tool, onChange:e=>setTool(e.target.value) },
+            React.createElement("select", {
+              value:tool, onChange:e=>setTool(e.target.value)
+            },
               React.createElement("option",{value:"pen"},"Penna"),
               React.createElement("option",{value:"arrow"},"Freccia"),
               React.createElement("option",{value:"text"},"Testo")
             ),
 
-            React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+            React.createElement("input", {
+              type:"color", value:color,
+              onChange:e=>setColor(e.target.value)
+            }),
 
             React.createElement("input", {
               type:"range", min:1, max:20, value:brushSize,
@@ -194,14 +206,18 @@
 
             tool === "text" &&
               React.createElement("input", {
-                type:"text", placeholder:"Scrivi qui",
-                value:textInput, onChange:e=>setTextInput(e.target.value)
+                type:"text", placeholder:"Scrivi testo",
+                value:textInput,
+                onChange:e=>setTextInput(e.target.value)
               }),
 
             React.createElement("button",{onClick:undo},"Undo"),
             React.createElement("button",{onClick:resetCanvas},"Reset"),
-
-            React.createElement("button",{className:"primary", onClick:save, disabled:saving},
+            React.createElement("button",{
+              className:"primary",
+              onClick:save,
+              disabled:saving
+            },
               saving ? "Salvataggio..." : "Salva"
             )
           ),
@@ -234,8 +250,8 @@
 
       ReactDOM.createRoot(document.getElementById("root"))
         .render(React.createElement(App));
+
     })();
   </script>
 </body>
 </html>
-

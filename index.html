@@ -36,191 +36,206 @@
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">Caricamento editor...</div>
 
   <script>
-    const { useState, useEffect, useRef } = React;
-    const { Stage, Layer, Line, Arrow, Text: KText, Image: KImage } = ReactKonva;
+    (function () {
+      var root = document.getElementById('root');
 
-    function useImage(url) {
-      const [img, setImg] = useState(null);
-      useEffect(() => {
-        if(!url) return;
-        const i = new Image();
-        i.crossOrigin = "Anonymous";
-        i.onload = () => setImg(i);
-        i.src = url;
-      }, [url]);
-      return img;
-    }
+      // Controlli base: se una libreria manca, MOSTRA MESSAGGIO invece della pagina bianca
+      if (!window.React || !window.ReactDOM) {
+        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: React non è stato caricato.</div>";
+        return;
+      }
+      if (!window.ReactKonva) {
+        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: ReactKonva non è stato caricato.</div>";
+        return;
+      }
 
-    function App() {
-      const [recordId, setRecordId] = useState(null);
-      const [imageUrl, setImageUrl] = useState(null);
-      const [filename, setFilename] = useState("modificato.png");
+      const { useState, useEffect, useRef } = React;
+      const { Stage, Layer, Line, Arrow, Text: KText, Image: KImage } = ReactKonva;
 
-      const [tool, setTool] = useState("pen");
-      const [color, setColor] = useState("#ff0000");
-      const [brushSize, setBrushSize] = useState(4);
-      const [textInput, setTextInput] = useState("");
+      function useImage(url) {
+        const [img, setImg] = useState(null);
+        useEffect(() => {
+          if(!url) return;
+          const i = new Image();
+          i.crossOrigin = "Anonymous";
+          i.onload = () => setImg(i);
+          i.src = url;
+        }, [url]);
+        return img;
+      }
 
-      const [shapes, setShapes] = useState([]);
-      const [loading, setLoading] = useState(false);
-      const [saving, setSaving] = useState(false);
-      const [error, setError] = useState(null);
+      function App() {
+        const [recordId, setRecordId] = useState(null);
+        const [imageUrl, setImageUrl] = useState(null);
+        const [filename, setFilename] = useState("modificato.png");
 
-      const imageObj = useImage(imageUrl);
-      const stageRef = useRef();
+        const [tool, setTool] = useState("pen");
+        const [color, setColor] = useState("#ff0000");
+        const [brushSize, setBrushSize] = useState(4);
+        const [textInput, setTextInput] = useState("");
 
-      // --- CARICA RECORD ---
-      useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const rec = params.get("recordId");
-        if (!rec) {
-          setError("recordId mancante nell'URL");
-          return;
-        }
-        setRecordId(rec);
+        const [shapes, setShapes] = useState([]);
+        const [loading, setLoading] = useState(false);
+        const [saving, setSaving] = useState(false);
+        const [error, setError] = useState(null);
 
-        setLoading(true);
-        fetch(`/api/record?recordId=${rec}`)
-          .then(r => r.json())
-          .then(data => {
-            if (!data.imageUrl)
-              throw new Error("Campo BODY vuoto o immagine mancante");
+        const imageObj = useImage(imageUrl);
+        const stageRef = useRef();
 
-            setImageUrl(data.imageUrl);
-            if (data.filename) setFilename(data.filename);
-          })
-          .catch(err => setError(err.message))
-          .finally(() => setLoading(false));
-      }, []);
+        // --- CARICA RECORD ---
+        useEffect(() => {
+          const params = new URLSearchParams(window.location.search);
+          const rec = params.get("recordId");
+          if (!rec) {
+            setError("recordId mancante nell'URL");
+            return;
+          }
+          setRecordId(rec);
 
-      // --- DISEGNO ---
-      const handleMouseDown = e => {
-        if (!imageObj) return;
-        const stage = e.target.getStage();
-        if (e.target !== stage) return;
-        const pos = stage.getPointerPosition();
+          setLoading(true);
+          fetch("/api/record?recordId=" + encodeURIComponent(rec))
+            .then(r => r.json())
+            .then(data => {
+              if (!data.imageUrl)
+                throw new Error("Campo BODY vuoto o immagine mancante");
 
-        if (tool === "pen") {
-          setShapes(s => [...s, { type:"pen", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-        } else if (tool === "arrow") {
-          setShapes(s => [...s, { type:"arrow", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-        } else if (tool === "text" && textInput.trim()) {
-          setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput, color }]);
-          setTextInput("");
-        }
-      };
+              setImageUrl(data.imageUrl);
+              if (data.filename) setFilename(data.filename);
+            })
+            .catch(err => setError(err.message))
+            .finally(() => setLoading(false));
+        }, []);
 
-      const handleMouseMove = e => {
-        if (!["pen","arrow"].includes(tool)) return;
-        setShapes(prev => {
-          if (!prev.length) return prev;
-          const last = prev[prev.length - 1];
-          if (!last.points) return prev;
+        // --- DISEGNO ---
+        const handleMouseDown = e => {
+          if (!imageObj) return;
           const stage = e.target.getStage();
+          if (e.target !== stage) return;
           const pos = stage.getPointerPosition();
-          const updated = { ...last, points:[...last.points, pos.x, pos.y] };
-          return [...prev.slice(0, -1), updated];
-        });
-      };
 
-      const undo = () => setShapes(s => s.slice(0, -1));
-      const resetCanvas = () => setShapes([]);
+          if (tool === "pen") {
+            setShapes(s => [...s, { type:"pen", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
+          } else if (tool === "arrow") {
+            setShapes(s => [...s, { type:"arrow", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
+          } else if (tool === "text" && textInput.trim()) {
+            setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput, color }]);
+            setTextInput("");
+          }
+        };
 
-      // --- SALVA ---
-      const save = async () => {
-        if (!recordId || !stageRef.current) return;
-        setSaving(true);
-        setError(null);
-
-        try {
-          const dataURL = stageRef.current.toDataURL({ pixelRatio:2 });
-
-          const res = await fetch("/api/record", {
-            method: "POST",
-            headers: { "Content-Type":"application/json" },
-            body: JSON.stringify({ recordId, dataURL, filename })
+        const handleMouseMove = e => {
+          if (!["pen","arrow"].includes(tool)) return;
+          setShapes(prev => {
+            if (!prev.length) return prev;
+            const last = prev[prev.length - 1];
+            if (!last.points) return prev;
+            const stage = e.target.getStage();
+            const pos = stage.getPointerPosition();
+            const updated = { ...last, points:[...last.points, pos.x, pos.y] };
+            return [...prev.slice(0, -1), updated];
           });
+        };
 
-          const out = await res.json();
-          if (!res.ok) throw new Error(out.error);
+        const undo = () => setShapes(s => s.slice(0, -1));
+        const resetCanvas = () => setShapes([]);
 
-          alert("Immagine salvata con successo!");
-          setShapes([]);
-          if (out.publicUrl) setImageUrl(out.publicUrl);
-        }
-        catch(err) {
-          setError(err.message);
-        }
-        finally {
-          setSaving(false);
-        }
-      };
+        // --- SALVA ---
+        const save = async () => {
+          if (!recordId || !stageRef.current) return;
+          setSaving(true);
+          setError(null);
 
-      return React.createElement("div", { className:"app" },
-        React.createElement("h2", null, "Editor CASI CLINICI"),
+          try {
+            const dataURL = stageRef.current.toDataURL({ pixelRatio:2 });
 
-        error && React.createElement("div", { className:"error-box" }, error),
-        loading && React.createElement("p", null, "Caricamento immagine..."),
+            const res = await fetch("/api/record", {
+              method: "POST",
+              headers: { "Content-Type":"application/json" },
+              body: JSON.stringify({ recordId, dataURL, filename })
+            });
 
-        React.createElement("div", { className:"toolbar" },
-          React.createElement("select", { value:tool, onChange:e=>setTool(e.target.value) },
-            React.createElement("option",{value:"pen"},"Penna"),
-            React.createElement("option",{value:"arrow"},"Freccia"),
-            React.createElement("option",{value:"text"},"Testo")
-          ),
+            const out = await res.json();
+            if (!res.ok) throw new Error(out.error || "Errore salvataggio");
 
-          React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+            alert("Immagine salvata con successo!");
+            setShapes([]);
+            if (out.publicUrl) setImageUrl(out.publicUrl);
+          }
+          catch(err) {
+            setError(err.message);
+          }
+          finally {
+            setSaving(false);
+          }
+        };
 
-          React.createElement("input", {
-            type:"range", min:1, max:20, value:brushSize,
-            onChange:e=>setBrushSize(Number(e.target.value))
-          }),
+        return React.createElement("div", { className:"app" },
+          React.createElement("h2", null, "Editor CASI CLINICI"),
 
-          tool === "text" &&
+          error && React.createElement("div", { className:"error-box" }, error),
+          loading && React.createElement("p", null, "Caricamento immagine..."),
+
+          React.createElement("div", { className:"toolbar" },
+            React.createElement("select", { value:tool, onChange:e=>setTool(e.target.value) },
+              React.createElement("option",{value:"pen"},"Penna"),
+              React.createElement("option",{value:"arrow"},"Freccia"),
+              React.createElement("option",{value:"text"},"Testo")
+            ),
+
+            React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+
             React.createElement("input", {
-              type:"text", placeholder:"Scrivi qui",
-              value:textInput, onChange:e=>setTextInput(e.target.value)
+              type:"range", min:1, max:20, value:brushSize,
+              onChange:e=>setBrushSize(Number(e.target.value))
             }),
 
-          React.createElement("button",{onClick:undo},"Undo"),
-          React.createElement("button",{onClick:resetCanvas},"Reset"),
+            tool === "text" &&
+              React.createElement("input", {
+                type:"text", placeholder:"Scrivi qui",
+                value:textInput, onChange:e=>setTextInput(e.target.value)
+              }),
 
-          React.createElement("button",{className:"primary", onClick:save, disabled:saving},
-            saving ? "Salvataggio..." : "Salva"
-          )
-        ),
+            React.createElement("button",{onClick:undo},"Undo"),
+            React.createElement("button",{onClick:resetCanvas},"Reset"),
 
-        React.createElement("div",{className:"canvas-container"},
-          imageObj &&
-            React.createElement(Stage, {
-              width:imageObj.width,
-              height:imageObj.height,
-              onMouseDown:handleMouseDown,
-              onMouseMove:handleMouseMove,
-              ref:stageRef,
-              style:{border:"1px solid #ccc"}
-            },
-              React.createElement(Layer, null,
-                React.createElement(KImage,{image:imageObj}),
-                shapes.map((s,i)=>{
-                  if (s.type==="pen")
-                    return React.createElement(Line,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,lineCap:"round",lineJoin:"round"});
-                  if (s.type==="arrow")
-                    return React.createElement(Arrow,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,pointerLength:10,pointerWidth:10});
-                  if (s.type==="text")
-                    return React.createElement(KText,{key:i,x:s.x,y:s.y,text:s.text,fill:s.color,fontSize:22});
-                })
-              )
+            React.createElement("button",{className:"primary", onClick:save, disabled:saving},
+              saving ? "Salvataggio..." : "Salva"
             )
-        )
-      );
-    }
+          ),
 
-    ReactDOM.createRoot(document.getElementById("root"))
-      .render(React.createElement(App));
+          React.createElement("div",{className:"canvas-container"},
+            imageObj &&
+              React.createElement(Stage, {
+                width:imageObj.width,
+                height:imageObj.height,
+                onMouseDown:handleMouseDown,
+                onMouseMove:handleMouseMove,
+                ref:stageRef,
+                style:{border:"1px solid #ccc"}
+              },
+                React.createElement(Layer, null,
+                  React.createElement(KImage,{image:imageObj}),
+                  shapes.map((s,i)=>{
+                    if (s.type==="pen")
+                      return React.createElement(Line,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,lineCap:"round",lineJoin:"round"});
+                    if (s.type==="arrow")
+                      return React.createElement(Arrow,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,pointerLength:10,pointerWidth:10});
+                    if (s.type==="text")
+                      return React.createElement(KText,{key:i,x:s.x,y:s.y,text:s.text,fill:s.color,fontSize:22});
+                  })
+                )
+              )
+          )
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root"))
+        .render(React.createElement(App));
+    })();
   </script>
 </body>
 </html>
+

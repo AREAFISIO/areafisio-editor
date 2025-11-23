@@ -5,13 +5,7 @@
   <title>Editor CASI CLINICI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- React -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-
-  <!-- Konva + React-Konva CORRETTI E STABILI -->
   <script src="https://cdn.jsdelivr.net/npm/konva@9.3.0/konva.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-konva@18.2.7/umd/react-konva.js"></script>
 
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
@@ -36,222 +30,130 @@
   </style>
 </head>
 <body>
-  <div id="root">Caricamento editor...</div>
+  <div class="app">
+    <h2>Editor CASI CLINICI</h2>
+    <div id="error-box" class="error-box" style="display:none;"></div>
+
+    <div class="toolbar">
+      <select id="tool">
+        <option value="pen">Penna</option>
+        <option value="arrow">Freccia</option>
+      </select>
+
+      <input type="color" id="color" value="#ff0000" />
+      <input type="range" id="size" min="1" max="20" value="4" />
+      <button id="undo">Undo</button>
+      <button id="reset">Reset</button>
+      <button id="save" class="primary">Salva</button>
+    </div>
+
+    <div class="canvas-container">
+      <div id="container"></div>
+    </div>
+  </div>
 
   <script>
-    (function () {
-      const root = document.getElementById('root');
+    const errorBox = document.getElementById("error-box");
 
-      // --- CONTROLLI DI SICUREZZA ---
-      if (!window.React) {
-        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: React non caricato.</div>";
-        return;
-      }
-      if (!window.ReactKonva) {
-        root.innerHTML = "<div style='padding:20px;color:red;'>Errore: ReactKonva non caricato.</div>";
-        return;
-      }
+    function showError(msg) {
+      errorBox.style.display = "block";
+      errorBox.textContent = msg;
+    }
 
-      const { useState, useEffect, useRef } = React;
-      const {
-        Stage, Layer, Line, Arrow, Text: KText, Image: KImage
-      } = ReactKonva;
+    // ---- CARICA RECORD ----
+    const params = new URLSearchParams(window.location.search);
+    const recordId = params.get("recordId");
 
-      function useImage(url) {
-        const [img, setImg] = useState(null);
-        useEffect(() => {
-          if (!url) return;
-          const i = new Image();
-          i.crossOrigin = "Anonymous";
-          i.onload = () => setImg(i);
-          i.src = url;
-        }, [url]);
-        return img;
-      }
+    if (!recordId) showError("recordId mancante nell'URL");
 
-      function App() {
-        const [recordId, setRecordId] = useState(null);
-        const [imageUrl, setImageUrl] = useState(null);
-        const [filename, setFilename] = useState("modificato.png");
+    fetch("/api/record?recordId=" + recordId)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.imageUrl) throw new Error("Campo BODY vuoto o immagine mancante");
+        runEditor(data.imageUrl, data.filename || "immagine.png");
+      })
+      .catch(err => showError(err.message));
 
-        const [tool, setTool] = useState("pen");
-        const [color, setColor] = useState("#ff0000");
-        const [brushSize, setBrushSize] = useState(4);
-        const [textInput, setTextInput] = useState("");
+    function runEditor(imageUrl, filename) {
+      const stage = new Konva.Stage({
+        container: "container",
+        width: 800,
+        height: 600
+      });
 
-        const [shapes, setShapes] = useState([]);
-        const [loading, setLoading] = useState(false);
-        const [saving, setSaving] = useState(false);
-        const [error, setError] = useState(null);
+      const layer = new Konva.Layer();
+      stage.add(layer);
 
-        const imageObj = useImage(imageUrl);
-        const stageRef = useRef();
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = function() {
+        let kImg = new Konva.Image({
+          image: img,
+          x: 0,
+          y: 0
+        });
 
-        // ---- CARICA IMMAGINE DAL BACKEND ----
-        useEffect(() => {
-          const params = new URLSearchParams(window.location.search);
-          const rec = params.get("recordId");
+        stage.width(img.width);
+        stage.height(img.height);
 
-          if (!rec) {
-            setError("recordId mancante nell'URL");
-            return;
-          }
+        layer.add(kImg);
+        layer.draw();
+      };
+      img.src = imageUrl;
 
-          setRecordId(rec);
-          setLoading(true);
+      let isDrawing = false;
+      let currentLine = null;
 
-          fetch("/api/record?recordId=" + encodeURIComponent(rec))
-            .then(r => r.json())
-            .then(data => {
-              if (!data.imageUrl) throw new Error("Campo BODY vuoto o immagine mancante");
-              setImageUrl(data.imageUrl);
-              if (data.filename) setFilename(data.filename);
-            })
-            .catch(err => setError(err.message))
-            .finally(() => setLoading(false));
-        }, []);
+      stage.on("mousedown", () => {
+        isDrawing = true;
+        const pos = stage.getPointerPosition();
 
-        // ---- DISEGNO ----
-        const handleMouseDown = e => {
-          if (!imageObj) return;
-          const stage = e.target.getStage();
-          if (e.target !== stage) return;
-          const pos = stage.getPointerPosition();
+        currentLine = new Konva.Line({
+          stroke: document.getElementById("color").value,
+          strokeWidth: Number(document.getElementById("size").value),
+          points: [pos.x, pos.y],
+          lineCap: "round",
+          lineJoin: "round"
+        });
+        layer.add(currentLine);
+      });
 
-          if (tool === "pen") {
-            setShapes(s => [...s, { type:"pen", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-          }
-          else if (tool === "arrow") {
-            setShapes(s => [...s, { type:"arrow", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
-          }
-          else if (tool === "text" && textInput.trim()) {
-            setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput.trim(), color }]);
-            setTextInput("");
-          }
-        };
+      stage.on("mousemove", () => {
+        if (!isDrawing) return;
+        const pos = stage.getPointerPosition();
+        let newPoints = currentLine.points().concat([pos.x, pos.y]);
+        currentLine.points(newPoints);
+        layer.batchDraw();
+      });
 
-        const handleMouseMove = e => {
-          if (!["pen","arrow"].includes(tool)) return;
-          setShapes(prev => {
-            if (!prev.length) return prev;
-            const last = prev[prev.length - 1];
-            const stage = e.target.getStage();
-            const pos = stage.getPointerPosition();
-            return [...prev.slice(0, -1), {
-              ...last,
-              points:[...last.points, pos.x, pos.y]
-            }];
-          });
-        };
+      stage.on("mouseup", () => {
+        isDrawing = false;
+      });
 
-        const undo = () => setShapes(s => s.slice(0, -1));
-        const resetCanvas = () => setShapes([]);
+      document.getElementById("undo").onclick = () => {
+        const shapes = layer.getChildren();
+        if (shapes.length > 1) shapes[shapes.length - 1].destroy();
+        layer.draw();
+      };
 
-        // ---- SALVA ----
-        const save = async () => {
-          if (!recordId || !stageRef.current) return;
+      document.getElementById("reset").onclick = () => {
+        layer.destroyChildren();
+        layer.draw();
+      };
 
-          setSaving(true);
-          setError(null);
+      document.getElementById("save").onclick = () => {
+        const dataURL = stage.toDataURL({ pixelRatio: 2 });
 
-          try {
-            const dataURL = stageRef.current.toDataURL({ pixelRatio:2 });
-
-            const res = await fetch("/api/record", {
-              method: "POST",
-              headers: { "Content-Type":"application/json" },
-              body: JSON.stringify({ recordId, dataURL, filename })
-            });
-
-            const out = await res.json();
-            if (!res.ok) throw new Error(out.error);
-
-            alert("Immagine salvata!");
-            setShapes([]);
-            if (out.publicUrl) setImageUrl(out.publicUrl);
-          }
-          catch(err) {
-            setError(err.message);
-          }
-          finally {
-            setSaving(false);
-          }
-        };
-
-        // ---- UI ----
-        return React.createElement("div", { className:"app" },
-          React.createElement("h2", null, "Editor CASI CLINICI"),
-
-          error && React.createElement("div", { className:"error-box" }, error),
-          loading && React.createElement("p", null, "Caricamento..."),
-
-          React.createElement("div", { className:"toolbar" },
-            React.createElement("select", {
-              value:tool, onChange:e=>setTool(e.target.value)
-            },
-              React.createElement("option",{value:"pen"},"Penna"),
-              React.createElement("option",{value:"arrow"},"Freccia"),
-              React.createElement("option",{value:"text"},"Testo")
-            ),
-
-            React.createElement("input", {
-              type:"color", value:color,
-              onChange:e=>setColor(e.target.value)
-            }),
-
-            React.createElement("input", {
-              type:"range", min:1, max:20, value:brushSize,
-              onChange:e=>setBrushSize(Number(e.target.value))
-            }),
-
-            tool === "text" &&
-              React.createElement("input", {
-                type:"text", placeholder:"Scrivi testo",
-                value:textInput,
-                onChange:e=>setTextInput(e.target.value)
-              }),
-
-            React.createElement("button",{onClick:undo},"Undo"),
-            React.createElement("button",{onClick:resetCanvas},"Reset"),
-            React.createElement("button",{
-              className:"primary",
-              onClick:save,
-              disabled:saving
-            },
-              saving ? "Salvataggio..." : "Salva"
-            )
-          ),
-
-          React.createElement("div",{className:"canvas-container"},
-            imageObj &&
-              React.createElement(Stage, {
-                width:imageObj.width,
-                height:imageObj.height,
-                onMouseDown:handleMouseDown,
-                onMouseMove:handleMouseMove,
-                ref:stageRef,
-                style:{border:"1px solid #ccc"}
-              },
-                React.createElement(Layer, null,
-                  React.createElement(KImage,{image:imageObj}),
-                  shapes.map((s,i)=>{
-                    if (s.type==="pen")
-                      return React.createElement(Line,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,lineCap:"round",lineJoin:"round"});
-                    if (s.type==="arrow")
-                      return React.createElement(Arrow,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,pointerLength:10,pointerWidth:10});
-                    if (s.type==="text")
-                      return React.createElement(KText,{key:i,x:s.x,y:s.y,text:s.text,fill:s.color,fontSize:22});
-                  })
-                )
-              )
-          )
-        );
-      }
-
-      ReactDOM.createRoot(document.getElementById("root"))
-        .render(React.createElement(App));
-
-    })();
+        fetch("/api/record", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ recordId, dataURL, filename })
+        })
+        .then(r => r.json())
+        .then(() => alert("Immagine salvata!"))
+        .catch(err => showError(err.message));
+      };
+    }
   </script>
 </body>
 </html>

@@ -4,28 +4,34 @@
   <meta charset="UTF-8" />
   <title>Editor CASI CLINICI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- React -->
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Konva -->
   <script src="https://unpkg.com/konva@9/konva.min.js"></script>
   <script src="https://unpkg.com/react-konva@18/umd/react-konva.js"></script>
+
   <style>
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
     .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
     .toolbar {
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
-      background: #fff; padding: 8px 12px; border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px;
+      background: white; padding: 10px; border-radius: 8px;
+      display: flex; gap: 10px; align-items: center;
+      margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
-    button.primary { background:#0070f3; color:#fff; border-color:#0070f3; }
-    button:disabled { opacity:.6; cursor:default; }
+    button { padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
+    button.primary { background:#0070f3; color:white; border-color:#0070f3; }
+    button:disabled { opacity: .6; cursor: default; }
     .canvas-container {
-      background:#fff; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1);
-      padding:8px; overflow:auto;
+      background: white; padding: 10px; border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
     }
     .error-box {
-      background:#ffe5e5; border:1px solid #ff9999; padding:8px 12px; border-radius:6px;
-      color:#900; margin-bottom:10px;
+      background: #ffe4e4; border: 1px solid #ff8c8c;
+      padding: 8px 12px; border-radius: 6px; color: #900;
+      margin-bottom: 10px;
     }
   </style>
 </head>
@@ -34,12 +40,12 @@
 
   <script>
     const { useState, useEffect, useRef } = React;
-    const { Stage, Layer, Line, Arrow, Text: KText, Image: KonvaImage } = ReactKonva;
+    const { Stage, Layer, Line, Arrow, Text: KText, Image: KImage } = ReactKonva;
 
     function useImage(url) {
-      const [img,setImg] = useState(null);
+      const [img, setImg] = useState(null);
       useEffect(() => {
-        if(!url){ setImg(null); return; }
+        if(!url) return;
         const i = new Image();
         i.crossOrigin = "Anonymous";
         i.onload = () => setImg(i);
@@ -51,244 +57,161 @@
     function App() {
       const [recordId, setRecordId] = useState(null);
       const [imageUrl, setImageUrl] = useState(null);
-      const [filename, setFilename] = useState("image.png");
-      const imageObj = useImage(imageUrl);
+      const [filename, setFilename] = useState("modificato.png");
 
       const [tool, setTool] = useState("pen");
       const [color, setColor] = useState("#ff0000");
       const [brushSize, setBrushSize] = useState(4);
       const [textInput, setTextInput] = useState("");
+
       const [shapes, setShapes] = useState([]);
-      const [stageScale, setStageScale] = useState(1);
-      const [stagePos, setStagePos] = useState({x:0,y:0});
-      const [saving, setSaving] = useState(false);
       const [loading, setLoading] = useState(false);
+      const [saving, setSaving] = useState(false);
       const [error, setError] = useState(null);
+
+      const imageObj = useImage(imageUrl);
       const stageRef = useRef();
 
-      // carica record da Airtable via backend
+      // --- CARICA RECORD ---
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const recId = params.get("recordId");
-        if (!recId) {
+        const rec = params.get("recordId");
+        if (!rec) {
           setError("recordId mancante nell'URL");
           return;
         }
-        setRecordId(recId);
+        setRecordId(rec);
+
         setLoading(true);
-        fetch(`/api/record?recordId=${encodeURIComponent(recId)}`)
-          .then(async r => {
-            const data = await r.json();
-            if (!r.ok) {
-              throw new Error(data.error || "Errore caricamento record");
-            }
-            return data;
-          })
+        fetch(`/api/record?recordId=${rec}`)
+          .then(r => r.json())
           .then(data => {
-            if (!data.imageUrl) {
-              setError("Nessuna immagine trovata nel campo BODY per questo record.");
-            } else {
-              setError(null);
-              setImageUrl(data.imageUrl);
-              if (data.filename) setFilename(data.filename);
-            }
+            if (!data.imageUrl)
+              throw new Error("Campo BODY vuoto o immagine mancante");
+
+            setImageUrl(data.imageUrl);
+            if (data.filename) setFilename(data.filename);
           })
-          .catch(err => {
-            console.error(err);
-            setError("Errore caricamento: " + err.message);
-          })
+          .catch(err => setError(err.message))
           .finally(() => setLoading(false));
       }, []);
 
+      // --- DISEGNO ---
       const handleMouseDown = e => {
         if (!imageObj) return;
         const stage = e.target.getStage();
         if (e.target !== stage) return;
         const pos = stage.getPointerPosition();
-        if (tool === "pen" || tool === "arrow") {
-          setShapes(s => [...s, { type: tool, points: [pos.x,pos.y], color, strokeWidth: brushSize, x:0,y:0 }]);
-        } else if (tool === "eraser") {
-          setShapes(s => [...s, { type:"eraser", points:[pos.x,pos.y], strokeWidth: brushSize*2, x:0,y:0 }]);
+
+        if (tool === "pen") {
+          setShapes(s => [...s, { type:"pen", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
+        } else if (tool === "arrow") {
+          setShapes(s => [...s, { type:"arrow", points:[pos.x,pos.y], color, strokeWidth:brushSize }]);
         } else if (tool === "text" && textInput.trim()) {
-          setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput.trim(), color, fontSize:22 }]);
+          setShapes(s => [...s, { type:"text", x:pos.x, y:pos.y, text:textInput, color }]);
           setTextInput("");
         }
       };
 
       const handleMouseMove = e => {
-        if (!["pen","arrow","eraser"].includes(tool)) return;
+        if (!["pen","arrow"].includes(tool)) return;
         setShapes(prev => {
           if (!prev.length) return prev;
-          const last = prev[prev.length-1];
-          if (!["pen","arrow","eraser"].includes(last.type)) return prev;
+          const last = prev[prev.length - 1];
+          if (!last.points) return prev;
           const stage = e.target.getStage();
           const pos = stage.getPointerPosition();
-          const updated = {...last, points:[...last.points, pos.x,pos.y]};
-          return [...prev.slice(0,-1), updated];
+          const updated = { ...last, points:[...last.points, pos.x, pos.y] };
+          return [...prev.slice(0, -1), updated];
         });
       };
 
-      const handleShapeDragEnd = (idx,e) => {
-        const {x,y} = e.target.position();
-        setShapes(prev => {
-          const copy=[...prev];
-          copy[idx] = {...copy[idx], x,y};
-          return copy;
-        });
-      };
-
-      const handleWheel = e => {
-        e.evt.preventDefault();
-        const stage = e.target.getStage();
-        const oldScale = stageScale;
-        const pointer = stage.getPointerPosition();
-        const scaleBy = 1.05;
-        const direction = e.evt.deltaY > 0 ? -1 : 1;
-        const newScale = direction>0 ? oldScale*scaleBy : oldScale/scaleBy;
-        const mousePointTo = {
-          x:(pointer.x - stagePos.x)/oldScale,
-          y:(pointer.y - stagePos.y)/oldScale
-        };
-        const newPos = {
-          x: pointer.x - mousePointTo.x * newScale,
-          y: pointer.y - mousePointTo.y * newScale
-        };
-        setStageScale(newScale);
-        setStagePos(newPos);
-      };
-
-      const handleStageDragEnd = e => {
-        setStagePos(e.target.position());
-      };
-
-      const undo = () => setShapes(s => s.slice(0,-1));
+      const undo = () => setShapes(s => s.slice(0, -1));
       const resetCanvas = () => setShapes([]);
 
+      // --- SALVA ---
       const save = async () => {
         if (!recordId || !stageRef.current) return;
         setSaving(true);
         setError(null);
+
         try {
-          const stage = stageRef.current;
-          const oldScale = stage.scaleX();
-          const oldPos = stage.position();
-          stage.scale({x:1,y:1});
-          stage.position({x:0,y:0});
-          stage.batchDraw();
-          const dataURL = stage.toDataURL({pixelRatio:2});
-          stage.scale({x:oldScale,y:oldScale});
-          stage.position(oldPos);
-          stage.batchDraw();
+          const dataURL = stageRef.current.toDataURL({ pixelRatio:2 });
 
           const res = await fetch("/api/record", {
             method: "POST",
             headers: { "Content-Type":"application/json" },
             body: JSON.stringify({ recordId, dataURL, filename })
           });
+
           const out = await res.json();
-          if (!res.ok) throw new Error(out.error || "Errore salvataggio");
-          alert("Salvato e aggiornato in Airtable.");
+          if (!res.ok) throw new Error(out.error);
+
+          alert("Immagine salvata con successo!");
           setShapes([]);
           if (out.publicUrl) setImageUrl(out.publicUrl);
-        } catch (err) {
-          console.error(err);
-          setError("Errore salvataggio: " + err.message);
-        } finally {
+        }
+        catch(err) {
+          setError(err.message);
+        }
+        finally {
           setSaving(false);
         }
       };
 
-      return React.createElement(
-        "div",
-        { className: "app" },
+      return React.createElement("div", { className:"app" },
         React.createElement("h2", null, "Editor CASI CLINICI"),
-        error && React.createElement("div", { className: "error-box" }, error),
+
+        error && React.createElement("div", { className:"error-box" }, error),
         loading && React.createElement("p", null, "Caricamento immagine..."),
-        React.createElement(
-          "div",
-          { className: "toolbar" },
-          React.createElement("span", null, "Tool:"),
-          React.createElement("select", { value: tool, onChange:e=>setTool(e.target.value) },
+
+        React.createElement("div", { className:"toolbar" },
+          React.createElement("select", { value:tool, onChange:e=>setTool(e.target.value) },
             React.createElement("option",{value:"pen"},"Penna"),
             React.createElement("option",{value:"arrow"},"Freccia"),
-            React.createElement("option",{value:"text"},"Testo"),
-            React.createElement("option",{value:"eraser"},"Gomma")
+            React.createElement("option",{value:"text"},"Testo")
           ),
-          React.createElement("span", null, "Spessore:"),
+
+          React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+
           React.createElement("input", {
             type:"range", min:1, max:20, value:brushSize,
             onChange:e=>setBrushSize(Number(e.target.value))
           }),
-          React.createElement("span", null, brushSize + "px"),
-          React.createElement("span", null, "Colore:"),
-          React.createElement("input", { type:"color", value:color, onChange:e=>setColor(e.target.value) }),
+
           tool === "text" &&
             React.createElement("input", {
-              type:"text", placeholder:"Scrivi testo",
+              type:"text", placeholder:"Scrivi qui",
               value:textInput, onChange:e=>setTextInput(e.target.value)
             }),
+
           React.createElement("button",{onClick:undo},"Undo"),
           React.createElement("button",{onClick:resetCanvas},"Reset"),
-          React.createElement("button",{className:"primary", onClick:save, disabled:saving || !imageObj},
-            saving ? "Salvataggio..." : "Salva in Airtable"
+
+          React.createElement("button",{className:"primary", onClick:save, disabled:saving},
+            saving ? "Salvataggio..." : "Salva"
           )
         ),
-        React.createElement(
-          "div",
-          { className:"canvas-container" },
-          !imageObj && !loading && !error &&
-            React.createElement("p", null, "Nessuna immagine trovata nel campo BODY per questo record."),
+
+        React.createElement("div",{className:"canvas-container"},
           imageObj &&
-            React.createElement(
-              Stage,
-              {
-                width:imageObj.width,
-                height:imageObj.height,
-                scaleX:stageScale,
-                scaleY:stageScale,
-                x:stagePos.x,
-                y:stagePos.y,
-                draggable:true,
-                onDragEnd:handleStageDragEnd,
-                onWheel:handleWheel,
-                onMouseDown:handleMouseDown,
-                onMouseMove:handleMouseMove,
-                ref:stageRef,
-                style:{border:"1px solid #ddd", background:"#fff"}
-              },
-              React.createElement(
-                Layer,
-                null,
-                React.createElement(KonvaImage, { image:imageObj }),
-                shapes.map((s,i) => {
-                  if (s.type === "pen")
-                    return React.createElement(Line,{
-                      key:i,x:s.x||0,y:s.y||0,points:s.points,
-                      stroke:s.color,strokeWidth:s.strokeWidth,
-                      lineCap:"round",lineJoin:"round",
-                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
-                    });
-                  if (s.type === "arrow")
-                    return React.createElement(Arrow,{
-                      key:i,x:s.x||0,y:s.y||0,points:s.points,
-                      stroke:s.color,strokeWidth:s.strokeWidth,
-                      pointerLength:10,pointerWidth:10,
-                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
-                    });
-                  if (s.type === "eraser")
-                    return React.createElement(Line,{
-                      key:i,x:s.x||0,y:s.y||0,points:s.points,
-                      stroke:"black",strokeWidth:s.strokeWidth,
-                      lineCap:"round",lineJoin:"round",
-                      globalCompositeOperation:"destination-out"
-                    });
-                  if (s.type === "text")
-                    return React.createElement(KText,{
-                      key:i,x:s.x,y:s.y,text:s.text,
-                      fill:s.color,fontSize:s.fontSize||22,
-                      draggable:true,onDragEnd:e=>handleShapeDragEnd(i,e)
-                    });
-                  return null;
+            React.createElement(Stage, {
+              width:imageObj.width,
+              height:imageObj.height,
+              onMouseDown:handleMouseDown,
+              onMouseMove:handleMouseMove,
+              ref:stageRef,
+              style:{border:"1px solid #ccc"}
+            },
+              React.createElement(Layer, null,
+                React.createElement(KImage,{image:imageObj}),
+                shapes.map((s,i)=>{
+                  if (s.type==="pen")
+                    return React.createElement(Line,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,lineCap:"round",lineJoin:"round"});
+                  if (s.type==="arrow")
+                    return React.createElement(Arrow,{key:i,points:s.points,stroke:s.color,strokeWidth:s.strokeWidth,pointerLength:10,pointerWidth:10});
+                  if (s.type==="text")
+                    return React.createElement(KText,{key:i,x:s.x,y:s.y,text:s.text,fill:s.color,fontSize:22});
                 })
               )
             )
@@ -296,7 +219,8 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+    ReactDOM.createRoot(document.getElementById("root"))
+      .render(React.createElement(App));
   </script>
 </body>
 </html>

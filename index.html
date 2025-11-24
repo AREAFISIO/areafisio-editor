@@ -38,6 +38,7 @@
       <select id="tool">
         <option value="pen">Penna</option>
         <option value="arrow">Freccia</option>
+        <option value="text">Testo</option>
       </select>
 
       <input type="color" id="color" value="#ff0000" />
@@ -75,19 +76,33 @@
       .catch(err => showError(err.message));
 
     function runEditor(imageUrl, filename) {
+      const container = document.getElementById("container");
+      container.innerHTML = ""; // pulisco se per caso viene ricreato
+
+      // Stage con due layer: sfondo + disegni
       const stage = new Konva.Stage({
         container: "container",
         width: 800,
         height: 600
       });
 
-      const layer = new Konva.Layer();
-      stage.add(layer);
+      const backgroundLayer = new Konva.Layer();
+      const drawLayer = new Konva.Layer();
+      stage.add(backgroundLayer);
+      stage.add(drawLayer);
 
+      // Stack per l'undo
+      const undoStack = [];
+
+      function addToUndo(shape) {
+        undoStack.push(shape);
+      }
+
+      // Carica immagine di base (con anti-cache)
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.onload = function() {
-        let kImg = new Konva.Image({
+        const kImg = new Konva.Image({
           image: img,
           x: 0,
           y: 0
@@ -96,51 +111,145 @@
         stage.width(img.width);
         stage.height(img.height);
 
-        layer.add(kImg);
-        layer.draw();
+        backgroundLayer.add(kImg);
+        backgroundLayer.draw();
+        drawLayer.draw();
       };
-      img.src = imageUrl;
+
+      // Aggiungo un parametro "t" per evitare la cache del browser
+      const cacheBuster = (imageUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+      img.src = imageUrl + cacheBuster;
 
       let isDrawing = false;
-      let currentLine = null;
+      let currentShape = null;
 
-      stage.on("mousedown", () => {
-        isDrawing = true;
-        const pos = stage.getPointerPosition();
+      const toolSelect = document.getElementById("tool");
+      const colorInput = document.getElementById("color");
+      const sizeInput = document.getElementById("size");
 
-        currentLine = new Konva.Line({
-          stroke: document.getElementById("color").value,
-          strokeWidth: Number(document.getElementById("size").value),
-          points: [pos.x, pos.y],
-          lineCap: "round",
-          lineJoin: "round"
-        });
-        layer.add(currentLine);
+      function getTool() {
+        return toolSelect.value;
+      }
+
+      // Abilita pan (trascinamento) e zoom
+      stage.draggable(true);
+
+      const scaleBy = 1.05;
+      stage.on("wheel", (e) => {
+        e.evt.preventDefault();
+        const oldScale = stage.scaleX() || 1;
+        const pointer = stage.getPointerPosition();
+
+        const mousePointTo = {
+          x: (pointer.x - stage.x()) / oldScale,
+          y: (pointer.y - stage.y()) / oldScale
+        };
+
+        const direction = e.evt.deltaY > 0 ? -1 : 1;
+        const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+
+        stage.scale({ x: newScale, y: newScale });
+
+        const newPos = {
+          x: pointer.x - mousePointTo.x * newScale,
+          y: pointer.y - mousePointTo.y * newScale
+        };
+
+        stage.position(newPos);
+        stage.batchDraw();
       });
 
-      stage.on("mousemove", () => {
-        if (!isDrawing) return;
+      // Disegno / Testo
+      stage.on("mousedown touchstart", () => {
         const pos = stage.getPointerPosition();
-        let newPoints = currentLine.points().concat([pos.x, pos.y]);
-        currentLine.points(newPoints);
-        layer.batchDraw();
+        const tool = getTool();
+        const color = colorInput.value;
+        const size = Number(sizeInput.value);
+
+        if (tool === "pen") {
+          isDrawing = true;
+          currentShape = new Konva.Line({
+            stroke: color,
+            strokeWidth: size,
+            points: [pos.x, pos.y],
+            lineCap: "round",
+            lineJoin: "round",
+            tension: 0.5
+          });
+          drawLayer.add(currentShape);
+          addToUndo(currentShape);
+          drawLayer.draw();
+        } else if (tool === "arrow") {
+          isDrawing = true;
+          currentShape = new Konva.Arrow({
+            stroke: color,
+            fill: color,
+            strokeWidth: size,
+            points: [pos.x, pos.y, pos.x, pos.y],
+            pointerLength: 10 + size,
+            pointerWidth: 10 + size,
+            lineCap: "round",
+            lineJoin: "round"
+          });
+          drawLayer.add(currentShape);
+          addToUndo(currentShape);
+          drawLayer.draw();
+        } else if (tool === "text") {
+          const textValue = prompt("Testo da inserire:");
+          if (!textValue) return;
+          const textNode = new Konva.Text({
+            x: pos.x,
+            y: pos.y,
+            text: textValue,
+            fill: color,
+            fontSize: size * 4,
+            fontFamily: "system-ui, sans-serif",
+            draggable: true
+          });
+          drawLayer.add(textNode);
+          addToUndo(textNode);
+          drawLayer.draw();
+        }
       });
 
-      stage.on("mouseup", () => {
+      stage.on("mousemove touchmove", () => {
+        if (!isDrawing || !currentShape) return;
+        const pos = stage.getPointerPosition();
+        const tool = getTool();
+
+        if (tool === "pen") {
+          const newPoints = currentShape.points().concat([pos.x, pos.y]);
+          currentShape.points(newPoints);
+        } else if (tool === "arrow") {
+          const pts = currentShape.points();
+          pts[2] = pos.x;
+          pts[3] = pos.y;
+          currentShape.points(pts);
+        }
+        drawLayer.batchDraw();
+      });
+
+      stage.on("mouseup touchend", () => {
         isDrawing = false;
+        currentShape = null;
       });
 
+      // ---- UNDO cronologico ----
       document.getElementById("undo").onclick = () => {
-        const shapes = layer.getChildren();
-        if (shapes.length > 1) shapes[shapes.length - 1].destroy();
-        layer.draw();
+        const lastShape = undoStack.pop();
+        if (!lastShape) return;
+        lastShape.destroy();
+        drawLayer.draw();
       };
 
+      // ---- RESET: cancella SOLO i disegni ----
       document.getElementById("reset").onclick = () => {
-        layer.destroyChildren();
-        layer.draw();
+        drawLayer.destroyChildren();
+        undoStack.length = 0;
+        drawLayer.draw();
       };
 
+      // ---- SALVA ----
       document.getElementById("save").onclick = () => {
         const dataURL = stage.toDataURL({ pixelRatio: 2 });
 

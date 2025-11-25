@@ -9,67 +9,292 @@
   <script src="https://cdn.jsdelivr.net/npm/konva@9.3.0/konva.min.js"></script>
 
   <style>
-    body { margin: 0; font-family: system-ui, sans-serif; background: #f5f5f5; }
-    .app { max-width: 1200px; margin: 0 auto; padding: 16px; }
-    .toolbar {
-      background: white; padding: 10px; border-radius: 8px;
-      display: flex; gap: 10px; align-items: center;
-      margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    /* ---- STILE GENERALE (in linea con grafica Airtable) ---- */
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+        sans-serif;
+      background: #f5f7fb;
+      color: #1f2933;
     }
-    button {
-      padding: 6px 12px; border-radius: 6px;
-      border: 1px solid #ccc; background: #fafafa; cursor: pointer;
+
+    .app {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 24px 32px;
     }
-    button.primary { background:#0070f3; color:white; border-color:#0070f3; }
-    button:disabled { opacity: .6; cursor: default; }
-    .canvas-container {
-      background: white; padding: 10px; border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+
+    .breadcrumbs {
+      font-size: 13px;
+      color: #6b778c;
+      margin-bottom: 4px;
     }
-    .error-box {
-      background: #ffe4e4; border: 1px solid #ff8c8c;
-      padding: 8px 12px; border-radius: 6px; color: #900;
+
+    .breadcrumbs span + span::before {
+      content: "›";
+      margin: 0 4px;
+      color: #9fa6b2;
+    }
+
+    .page-title {
+      font-size: 24px;
+      font-weight: 600;
+      color: #16192c;
+      margin: 4px 0 16px;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 18px;
+      border: 1px solid #dde1ee;
+      box-shadow: 0 4px 12px rgba(34, 54, 89, 0.06);
+      padding: 18px 20px 20px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       margin-bottom: 10px;
     }
-    /* bottone mano attivo */
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1f2933;
+    }
+
+    .card-subtitle {
+      font-size: 12px;
+      color: #6b778c;
+      margin-top: 2px;
+    }
+
+    .pill-pathology {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #e90f8b;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .pill-pathology small {
+      opacity: 0.9;
+    }
+
+    .toolbar-wrapper {
+      margin-top: 8px;
+      margin-bottom: 10px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: #f7f8fb;
+      border: 1px solid #e0e4f0;
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-right {
+      margin-left: auto;
+    }
+
+    select,
+    input[type="color"],
+    input[type="range"],
+    button {
+      font-family: inherit;
+      font-size: 13px;
+    }
+
+    select {
+      border-radius: 999px;
+      border: 1px solid #c1c7d0;
+      padding: 4px 10px;
+      background: #ffffff;
+      outline: none;
+      color: #253858;
+    }
+
+    button {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #c1c7d0;
+      background: #ffffff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      line-height: 1.2;
+      color: #253858;
+    }
+
+    button.primary {
+      background: #2684ff;
+      color: white;
+      border-color: #2684ff;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+
     .toggle-active {
-      background:#0070f3;
-      color:white;
-      border-color:#0070f3;
+      background: #2684ff;
+      color: #ffffff;
+      border-color: #2684ff;
+    }
+
+    input[type="color"] {
+      border-radius: 999px;
+      border: 1px solid #c1c7d0;
+      padding: 0;
+      width: 32px;
+      height: 24px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    input[type="range"] {
+      width: 120px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #6b778c;
+      margin-top: 6px;
+      margin-bottom: 10px;
+    }
+
+    /* ---- FINESTRA / VIEWPORT per l'immagine ---- */
+    .canvas-shell {
+      border-radius: 20px;
+      background: #edeff5;
+      padding: 18px 24px;
+    }
+
+    .canvas-viewport {
+      border-radius: 16px;
+      background: #f4f5fa;
+      overflow: hidden;      /* taglia ciò che esce dalla finestra */
+      width: 100%;
+      max-width: 100%;
+      height: 520px;
+      margin: 0 auto;
+      position: relative;
+      border: 1px solid #dde1ee;
+    }
+
+    #container {
+      width: 100%;
+      height: 100%;
+    }
+
+    .error-box {
+      background: #ffeef0;
+      border: 1px solid #f5c2c7;
+      padding: 8px 12px;
+      border-radius: 8px;
+      color: #c53030;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        padding: 0 12px 24px;
+      }
+      .canvas-shell {
+        padding: 12px 12px;
+      }
+      .canvas-viewport {
+        height: 420px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="app">
-    <h2>Editor CASI CLINICI</h2>
-    <div id="error-box" class="error-box" style="display:none;"></div>
-
-    <div class="toolbar">
-      <select id="tool">
-        <option value="pen">Penna</option>
-        <option value="arrow">Freccia</option>
-        <option value="text">Testo</option>
-      </select>
-
-      <!-- bottone mano: muove l'immagine quando è attivo -->
-      <button id="pan-btn" title="Muovi immagine">🤚</button>
-
-      <input type="color" id="color" value="#ff0000" />
-      <input type="range" id="size" min="1" max="20" value="4" />
-      <button id="undo">Undo</button>
-      <button id="reset">Reset</button>
-      <button id="save" class="primary">Salva</button>
+    <div class="breadcrumbs">
+      <span>CASI CLINICI</span>
+      <span>Editor caso</span>
     </div>
 
-    <div class="canvas-container">
-      <div id="container"></div>
+    <h1 class="page-title">Cartella clinica fisioterapica</h1>
+
+    <div id="error-box" class="error-box" style="display:none;"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Schema corporeo</div>
+          <div class="card-subtitle">
+            Disegna, aggiungi frecce e note sull’immagine del caso clinico.
+          </div>
+        </div>
+        <div class="pill-pathology">
+          <small>Caso clinico</small>
+        </div>
+      </div>
+
+      <div class="toolbar-wrapper">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <select id="tool">
+              <option value="pen">Penna</option>
+              <option value="arrow">Freccia</option>
+              <option value="text">Testo</option>
+            </select>
+
+            <button id="pan-btn" title="Muovi immagine (mano)">🤚 Mano</button>
+            <button id="zoom-btn" title="Zoom con rotellina">🔍 Zoom</button>
+
+            <input type="color" id="color" value="#ff0000" />
+            <input type="range" id="size" min="1" max="20" value="4" />
+          </div>
+
+          <div class="toolbar-right">
+            <button id="undo">↩️ Undo</button>
+            <button id="reset">🧹 Reset</button>
+            <button id="save" class="primary">💾 Salva</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hint">
+        Usa <strong>Penna / Freccia / Testo</strong> per annotare. Attiva
+        <strong>Mano</strong> per spostare l’immagine, attiva
+        <strong>Zoom</strong> per usare la rotellina. Quando disegni, tieni
+        Mano e Zoom disattivati.
+      </div>
+
+      <div class="canvas-shell">
+        <div class="canvas-viewport">
+          <div id="container"></div>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     // ---- GESTIONE ERRORI ----
     const errorBox = document.getElementById("error-box");
-    console.log("NUOVO EDITOR CARICATO index.html (con mano)");
+    console.log("Editor CASI CLINICI caricato (stile Airtable)");
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -85,7 +310,8 @@
     fetch("/api/record?recordId=" + recordId)
       .then((r) => r.json())
       .then((data) => {
-        if (!data.imageUrl) throw new Error("Campo BODY vuoto o immagine mancante");
+        if (!data.imageUrl)
+          throw new Error("Campo BODY vuoto o immagine mancante");
         runEditor(data.imageUrl, data.filename || "immagine.png");
       })
       .catch((err) => showError(err.message));
@@ -113,9 +339,11 @@
         undoStack.push(shape);
       }
 
-      // Stato panning (mano)
+      // Stato panning (mano) e zoom (lente)
       const panBtn = document.getElementById("pan-btn");
+      const zoomBtn = document.getElementById("zoom-btn");
       let isPanning = false;
+      let isZooming = false;
 
       function setPanning(active) {
         isPanning = active;
@@ -127,11 +355,25 @@
         }
       }
 
-      // all'inizio: niente panning
+      function setZooming(active) {
+        isZooming = active;
+        if (active) {
+          zoomBtn.classList.add("toggle-active");
+        } else {
+          zoomBtn.classList.remove("toggle-active");
+        }
+      }
+
+      // stato iniziale: niente pan, niente zoom
       setPanning(false);
+      setZooming(false);
 
       panBtn.onclick = () => {
         setPanning(!isPanning);
+      };
+
+      zoomBtn.onclick = () => {
+        setZooming(!isZooming);
       };
 
       // Carica immagine con anti-cache
@@ -167,9 +409,10 @@
         return toolSelect.value;
       }
 
-      // ---- ZOOM con rotellina del mouse ----
+      // ---- ZOOM con rotellina del mouse (solo se isZooming = true) ----
       const scaleBy = 1.05;
       stage.on("wheel", (e) => {
+        if (!isZooming) return; // zoom solo se attiva la lente
         e.evt.preventDefault();
         const oldScale = stage.scaleX() || 1;
         const pointer = stage.getPointerPosition();

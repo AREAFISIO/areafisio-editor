@@ -5,6 +5,7 @@
   <title>Editor CASI CLINICI</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- Konva -->
   <script src="https://cdn.jsdelivr.net/npm/konva@9.3.0/konva.min.js"></script>
 
   <style>
@@ -15,7 +16,10 @@
       display: flex; gap: 10px; align-items: center;
       margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
-    button { padding: 6px 12px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
+    button {
+      padding: 6px 12px; border-radius: 6px;
+      border: 1px solid #ccc; background: #fafafa; cursor: pointer;
+    }
     button.primary { background:#0070f3; color:white; border-color:#0070f3; }
     button:disabled { opacity: .6; cursor: default; }
     .canvas-container {
@@ -54,7 +58,9 @@
   </div>
 
   <script>
+    // ---- GESTIONE ERRORI ----
     const errorBox = document.getElementById("error-box");
+    console.log("NUOVO EDITOR CARICATO");
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -68,22 +74,23 @@
     if (!recordId) showError("recordId mancante nell'URL");
 
     fetch("/api/record?recordId=" + recordId)
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (!data.imageUrl) throw new Error("Campo BODY vuoto o immagine mancante");
         runEditor(data.imageUrl, data.filename || "immagine.png");
       })
-      .catch(err => showError(err.message));
+      .catch((err) => showError(err.message));
 
+    // ---- EDITOR ----
     function runEditor(imageUrl, filename) {
       const container = document.getElementById("container");
-      container.innerHTML = ""; // pulisco se per caso viene ricreato
+      container.innerHTML = ""; // nel caso l'editor venga ricreato
 
-      // Stage con due layer: sfondo + disegni
+      // Stage + due layer: sfondo e disegni
       const stage = new Konva.Stage({
         container: "container",
         width: 800,
-        height: 600
+        height: 600,
       });
 
       const backgroundLayer = new Konva.Layer();
@@ -91,21 +98,20 @@
       stage.add(backgroundLayer);
       stage.add(drawLayer);
 
-      // Stack per l'undo
+      // Stack per undo cronologico
       const undoStack = [];
-
       function addToUndo(shape) {
         undoStack.push(shape);
       }
 
-      // Carica immagine di base (con anti-cache)
+      // Carica immagine con anti-cache
       const img = new Image();
       img.crossOrigin = "Anonymous";
-      img.onload = function() {
+      img.onload = function () {
         const kImg = new Konva.Image({
           image: img,
           x: 0,
-          y: 0
+          y: 0,
         });
 
         stage.width(img.width);
@@ -116,8 +122,8 @@
         drawLayer.draw();
       };
 
-      // Aggiungo un parametro "t" per evitare la cache del browser
-      const cacheBuster = (imageUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+      const cacheBuster =
+        (imageUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
       img.src = imageUrl + cacheBuster;
 
       let isDrawing = false;
@@ -131,9 +137,7 @@
         return toolSelect.value;
       }
 
-      // Abilita pan (trascinamento) e zoom
-      stage.draggable(true);
-
+      // ---- ZOOM con rotellina del mouse ----
       const scaleBy = 1.05;
       stage.on("wheel", (e) => {
         e.evt.preventDefault();
@@ -142,26 +146,29 @@
 
         const mousePointTo = {
           x: (pointer.x - stage.x()) / oldScale,
-          y: (pointer.y - stage.y()) / oldScale
+          y: (pointer.y - stage.y()) / oldScale,
         };
 
         const direction = e.evt.deltaY > 0 ? -1 : 1;
-        const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+        const newScale =
+          direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
 
         stage.scale({ x: newScale, y: newScale });
 
         const newPos = {
           x: pointer.x - mousePointTo.x * newScale,
-          y: pointer.y - mousePointTo.y * newScale
+          y: pointer.y - mousePointTo.y * newScale,
         };
 
         stage.position(newPos);
         stage.batchDraw();
       });
 
-      // Disegno / Testo
+      // ---- Disegno / Testo ----
       stage.on("mousedown touchstart", () => {
         const pos = stage.getPointerPosition();
+        if (!pos) return;
+
         const tool = getTool();
         const color = colorInput.value;
         const size = Number(sizeInput.value);
@@ -174,7 +181,7 @@
             points: [pos.x, pos.y],
             lineCap: "round",
             lineJoin: "round",
-            tension: 0.5
+            tension: 0.5,
           });
           drawLayer.add(currentShape);
           addToUndo(currentShape);
@@ -189,7 +196,7 @@
             pointerLength: 10 + size,
             pointerWidth: 10 + size,
             lineCap: "round",
-            lineJoin: "round"
+            lineJoin: "round",
           });
           drawLayer.add(currentShape);
           addToUndo(currentShape);
@@ -204,7 +211,7 @@
             fill: color,
             fontSize: size * 4,
             fontFamily: "system-ui, sans-serif",
-            draggable: true
+            draggable: true,
           });
           drawLayer.add(textNode);
           addToUndo(textNode);
@@ -215,6 +222,8 @@
       stage.on("mousemove touchmove", () => {
         if (!isDrawing || !currentShape) return;
         const pos = stage.getPointerPosition();
+        if (!pos) return;
+
         const tool = getTool();
 
         if (tool === "pen") {
@@ -256,11 +265,11 @@
         fetch("/api/record", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ recordId, dataURL, filename })
+          body: JSON.stringify({ recordId, dataURL, filename }),
         })
-        .then(r => r.json())
-        .then(() => alert("Immagine salvata!"))
-        .catch(err => showError(err.message));
+          .then((r) => r.json())
+          .then(() => alert("Immagine salvata!"))
+          .catch((err) => showError(err.message));
       };
     }
   </script>

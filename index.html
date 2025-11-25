@@ -94,7 +94,7 @@
       width: 100%;
       max-width: 1100px;
       margin: 0 auto;
-      /* l'altezza viene impostata da JS */
+      /* altezza impostata da JS */
     }
 
     #container {
@@ -170,7 +170,6 @@
     function runEditor(imageUrl, filename) {
       const viewport = document.querySelector(".canvas-viewport");
 
-      // Stage iniziale, dimensioni provvisorie (verranno aggiornate dopo aver caricato l'immagine)
       const stage = new Konva.Stage({
         container: "container",
         width: 800,
@@ -184,18 +183,18 @@
 
       stage.draggable(false); // niente pan
 
+      // STACK per UNDO
+      const undoStack = [];
+
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.onload = function () {
-        // Larghezza disponibile nel riquadro (card)
         const viewportWidth = viewport.clientWidth || 1000;
 
-        // Scala l'immagine per occupare tutta la larghezza
         const scale = viewportWidth / img.width;
         const imgWidth = img.width * scale;
         const imgHeight = img.height * scale;
 
-        // imposta dimensioni stage e viewport in modo identico
         stage.width(imgWidth);
         stage.height(imgHeight);
         viewport.style.height = imgHeight + "px";
@@ -243,6 +242,7 @@
             lineJoin: "round",
           });
           drawLayer.add(currentShape);
+          undoStack.push(currentShape);
         } else if (tool === "arrow") {
           isDrawing = true;
           currentShape = new Konva.Arrow({
@@ -254,6 +254,7 @@
             pointerWidth: 10 + size,
           });
           drawLayer.add(currentShape);
+          undoStack.push(currentShape);
         } else if (tool === "text") {
           const txt = prompt("Testo:");
           if (!txt) return;
@@ -268,6 +269,7 @@
           });
 
           drawLayer.add(t);
+          undoStack.push(t);
         }
       });
 
@@ -295,8 +297,7 @@
 
       // ---- UNDO ----
       document.getElementById("undo").onclick = () => {
-        const children = drawLayer.children();
-        const last = children[children.length - 1];
+        const last = undoStack.pop();
         if (!last) return;
         last.destroy();
         drawLayer.draw();
@@ -305,6 +306,7 @@
       // ---- RESET ----
       document.getElementById("reset").onclick = () => {
         drawLayer.destroyChildren();
+        undoStack.length = 0;
         drawLayer.draw();
       };
 

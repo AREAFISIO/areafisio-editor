@@ -31,6 +31,12 @@
       padding: 8px 12px; border-radius: 6px; color: #900;
       margin-bottom: 10px;
     }
+    /* bottone mano attivo */
+    .toggle-active {
+      background:#0070f3;
+      color:white;
+      border-color:#0070f3;
+    }
   </style>
 </head>
 <body>
@@ -44,6 +50,9 @@
         <option value="arrow">Freccia</option>
         <option value="text">Testo</option>
       </select>
+
+      <!-- bottone mano: muove l'immagine quando è attivo -->
+      <button id="pan-btn" title="Muovi immagine">🤚</button>
 
       <input type="color" id="color" value="#ff0000" />
       <input type="range" id="size" min="1" max="20" value="4" />
@@ -60,7 +69,7 @@
   <script>
     // ---- GESTIONE ERRORI ----
     const errorBox = document.getElementById("error-box");
-    console.log("NUOVO EDITOR CARICATO index.html");
+    console.log("NUOVO EDITOR CARICATO index.html (con mano)");
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -103,6 +112,27 @@
       function addToUndo(shape) {
         undoStack.push(shape);
       }
+
+      // Stato panning (mano)
+      const panBtn = document.getElementById("pan-btn");
+      let isPanning = false;
+
+      function setPanning(active) {
+        isPanning = active;
+        stage.draggable(active);
+        if (active) {
+          panBtn.classList.add("toggle-active");
+        } else {
+          panBtn.classList.remove("toggle-active");
+        }
+      }
+
+      // all'inizio: niente panning
+      setPanning(false);
+
+      panBtn.onclick = () => {
+        setPanning(!isPanning);
+      };
 
       // Carica immagine con anti-cache
       const img = new Image();
@@ -165,11 +195,11 @@
         stage.batchDraw();
       });
 
-      // opzionale: trascinamento dell'immagine (pan)
-      stage.draggable(true);
-
       // ---- Disegno / Testo ----
       stage.on("mousedown touchstart", () => {
+        // se siamo in modalità mano, NON disegniamo
+        if (isPanning) return;
+
         const pos = stage.getPointerPosition();
         if (!pos) return;
 

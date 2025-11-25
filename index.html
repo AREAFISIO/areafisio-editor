@@ -60,7 +60,7 @@
   <script>
     // ---- GESTIONE ERRORI ----
     const errorBox = document.getElementById("error-box");
-    console.log("NUOVO EDITOR CARICATO");
+    console.log("NUOVO EDITOR CARICATO index.html");
 
     function showError(msg) {
       errorBox.style.display = "block";
@@ -143,6 +143,7 @@
         e.evt.preventDefault();
         const oldScale = stage.scaleX() || 1;
         const pointer = stage.getPointerPosition();
+        if (!pointer) return;
 
         const mousePointTo = {
           x: (pointer.x - stage.x()) / oldScale,
@@ -163,6 +164,9 @@
         stage.position(newPos);
         stage.batchDraw();
       });
+
+      // opzionale: trascinamento dell'immagine (pan)
+      stage.draggable(true);
 
       // ---- Disegno / Testo ----
       stage.on("mousedown touchstart", () => {
@@ -258,10 +262,26 @@
         drawLayer.draw();
       };
 
-      // ---- SALVA ----
+      // ---- SALVA (senza zoom/sfalsamenti) ----
       document.getElementById("save").onclick = () => {
+        // 1) salvo stato attuale di zoom/posizione
+        const oldScale = stage.scaleX() || 1;
+        const oldPos = { x: stage.x(), y: stage.y() };
+
+        // 2) resetto la stage per esportare l'immagine "pulita"
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: 0, y: 0 });
+        stage.batchDraw();
+
+        // 3) genero il PNG finale
         const dataURL = stage.toDataURL({ pixelRatio: 2 });
 
+        // 4) ripristino zoom e posizione dell'utente
+        stage.scale({ x: oldScale, y: oldScale });
+        stage.position(oldPos);
+        stage.batchDraw();
+
+        // 5) invio al backend
         fetch("/api/record", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

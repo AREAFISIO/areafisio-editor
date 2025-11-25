@@ -55,13 +55,20 @@ export default async function handler(req, res) {
     const original = fields[ORIGINAL_FIELD];
 
     if (!original || !Array.isArray(original) || original.length === 0) {
-      res
-        .status(400)
-        .json({ ok: false, error: "Nessuna immagine originale nel campo '" + ORIGINAL_FIELD + "'" });
+      res.status(400).json({
+        ok: false,
+        error: "Nessuna immagine originale nel campo '" + ORIGINAL_FIELD + "'",
+      });
       return;
     }
 
-    // 2) Aggiorno il campo BODY con l'allegato originale
+    // 2) Airtable in scrittura accetta solo url / filename / id.
+    const cleanedAttachments = original.map((att) => ({
+      url: att.url,
+      filename: att.filename,
+    }));
+
+    // 3) Aggiorno il campo BODY con l'allegato originale "ripulito"
     const patchUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableName}/${recordId}`;
     const patchRes = await fetch(patchUrl, {
       method: "PATCH",
@@ -71,7 +78,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         fields: {
-          [BODY_FIELD]: original,
+          [BODY_FIELD]: cleanedAttachments,
         },
       }),
     });
@@ -84,7 +91,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    const first = original[0];
+    const first = cleanedAttachments[0];
 
     res.status(200).json({
       ok: true,

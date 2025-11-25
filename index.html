@@ -85,15 +85,16 @@
       margin-top: 12px;
     }
 
-    /* Finestra che deve combaciare con l'immagine */
     .canvas-viewport {
       border-radius: 16px;
       background: #f4f5fa;
       overflow: hidden;
       border: 1px solid #dde1ee;
       position: relative;
+      width: 100%;
+      max-width: 1100px;
       margin: 0 auto;
-      /* width/height verranno impostate in JS in base all'immagine */
+      /* l'altezza viene impostata da JS */
     }
 
     #container {
@@ -153,29 +154,27 @@
       errorBox.textContent = msg;
     }
 
-    // ---- recordId dall'URL ----
     const params = new URLSearchParams(window.location.search);
     const recordId = params.get("recordId");
 
     if (!recordId) showError("recordId mancante");
 
-    // ---- Carica il record (immagine corrente nel campo BODY) ----
     fetch("/api/record?recordId=" + recordId)
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         if (!data.imageUrl) throw new Error("Nessuna immagine trovata");
         runEditor(data.imageUrl, data.filename || "immagine.png");
       })
-      .catch(err => showError(err.message));
-
+      .catch((err) => showError(err.message));
 
     function runEditor(imageUrl, filename) {
       const viewport = document.querySelector(".canvas-viewport");
 
+      // Stage iniziale, dimensioni provvisorie (verranno aggiornate dopo aver caricato l'immagine)
       const stage = new Konva.Stage({
         container: "container",
-        width: 1000,
-        height: 520,
+        width: 800,
+        height: 400,
       });
 
       const backgroundLayer = new Konva.Layer();
@@ -183,22 +182,22 @@
       stage.add(backgroundLayer);
       stage.add(drawLayer);
 
-      // niente pan, niente zoom:
-      stage.draggable(false);
+      stage.draggable(false); // niente pan
 
-      // carica immagine e adatta finestra alla stessa dimensione
       const img = new Image();
       img.crossOrigin = "Anonymous";
       img.onload = function () {
-        // QUI: usiamo la dimensione reale dell'immagine (un po' più grande)
-        const imgWidth = img.width;
-        const imgHeight = img.height;
+        // Larghezza disponibile nel riquadro (card)
+        const viewportWidth = viewport.clientWidth || 1000;
 
+        // Scala l'immagine per occupare tutta la larghezza
+        const scale = viewportWidth / img.width;
+        const imgWidth = img.width * scale;
+        const imgHeight = img.height * scale;
+
+        // imposta dimensioni stage e viewport in modo identico
         stage.width(imgWidth);
         stage.height(imgHeight);
-
-        // finestra esattamente uguale all'immagine
-        viewport.style.width = imgWidth + "px";
         viewport.style.height = imgHeight + "px";
 
         const kImg = new Konva.Image({
@@ -213,7 +212,6 @@
         backgroundLayer.draw();
       };
 
-      // anti-cache
       img.src = imageUrl + (imageUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
 
       let isDrawing = false;
@@ -280,9 +278,7 @@
 
         const tool = getTool();
         if (tool === "pen") {
-          currentShape.points(
-            currentShape.points().concat([pos.x, pos.y])
-          );
+          currentShape.points(currentShape.points().concat([pos.x, pos.y]));
         } else if (tool === "arrow") {
           let pts = currentShape.points();
           pts[2] = pos.x;
@@ -306,7 +302,7 @@
         drawLayer.draw();
       };
 
-      // ---- RESET (cancella tutti i disegni) ----
+      // ---- RESET ----
       document.getElementById("reset").onclick = () => {
         drawLayer.destroyChildren();
         drawLayer.draw();
@@ -326,7 +322,6 @@
           .then((r) => r.json())
           .then((data) => {
             if (!data.ok) throw new Error(data.error || "Errore nel ripristino");
-            // ricarico la pagina per ricaricare anche l'immagine da BODY
             location.reload();
           })
           .catch((err) => showError(err.message));

@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     SUPABASE_URL,
     SUPABASE_SERVICE_KEY,
     SUPABASE_BUCKET,
-  } = process.env;
+  } = process.env; 
 
   if (
     !AIRTABLE_TOKEN ||
@@ -72,14 +72,13 @@ export default async function handler(req, res) {
     const base64 = dataURL.split(",")[1];
     const buffer = Buffer.from(base64, "base64");
 
-    // creo SEMPRE un nome univoco per evitare cache strane
     const nowTs = Date.now();
     const safeRecordId = String(recordId).replace(/[^a-zA-Z0-9_-]/g, "_");
     const originalName = filename || "image.png";
     const storageFilename = `${safeRecordId}_${nowTs}_${originalName}`;
     const path = `edited/${storageFilename}`;
 
-    // 2) Upload su Supabase (sovrascrive se esiste ma il path è univoco)
+    // 2) Upload su Supabase
     const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${path}`;
     const uploadRes = await fetch(uploadUrl, {
       method: "PUT",
@@ -99,16 +98,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    // URL pubblico DEFINITIVO della nuova immagine
+    // URL pubblico della nuova immagine
     const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${path}`;
 
-    // 3) aggiorno Airtable (BODY + MODIFICATO IL) con il NUOVO URL
+    // 3) aggiorno Airtable SOLO su BODY
     const tableName = encodeURIComponent("CASI CLINICI");
     const patchUrl = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${tableName}/${recordId}`;
-
-    const tsHuman = new Date()
-      .toLocaleString("it-IT", { hour12: false })
-      .replace(",", "");
 
     const patchRes = await fetch(patchUrl, {
       method: "PATCH",
@@ -124,7 +119,6 @@ export default async function handler(req, res) {
               filename: originalName,
             },
           ],
-          "MODIFICATO IL": tsHuman,
         },
       }),
     });
